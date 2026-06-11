@@ -483,30 +483,76 @@ def trigger_batching_agent():
         st.error(f"Connection error: {e}")
         return False
 
+# def fetch_batches():
+#     try:
+#         response = requests.get(
+#             f"{ADK_BASE_URL}/apps/{APP_NAME}/users/{USER_ID}/sessions/{SESSION_ID}"
+#         )
+#         if response.status_code == 200:
+#             events = response.json().get("events", [])
+#             # Walk events newest-first, find the last agent text response
+#             for event in reversed(events):
+#                 if event.get("author") == "stadium_operations_agent":
+#                     parts = event.get("content", {}).get("parts", [{}])
+#                     raw_text = parts[0].get("text", "") if parts else ""
+#                     if raw_text:
+#                         return parse_agent_response(raw_text)
+#         return []
+#     except Exception as e:
+#         st.error(f"Fetch error: {e}")
+#         return []
+
+import json # Ensure this is imported at the top
 def fetch_batches():
+    """
+    1. Fetches raw text from the Agent.
+    2. Parses it into the requested Elasticsearch JSON format.
+    3. Prints the JSON for debugging.
+    4. Returns the list of batches for the UI.
+    """
     try:
         response = requests.get(
-            f"{ADK_BASE_URL}/apps/{APP_NAME}/users/{USER_ID}/sessions/{SESSION_ID}"
+            f"{ADK_BASE_URL}/apps/{APP_NAME}/users/{USER_ID}/sessions/{SESSION_ID}",
+            timeout=10
         )
         if response.status_code == 200:
             events = response.json().get("events", [])
-            # Walk events newest-first, find the last agent text response
             for event in reversed(events):
-                if event.get("author") == "stadium_operations_agent":
+                if event.get("author") == APP_NAME:
                     parts = event.get("content", {}).get("parts", [{}])
                     raw_text = parts[0].get("text", "") if parts else ""
+                    
                     if raw_text:
-                        return parse_agent_response(raw_text)
+                        # Parse to your specific ES format
+                        print("\n--- [DEBUG: parse_agent_response JSON OUTPUT] ---")
+                        print(raw_text)
+                        es_payload = parse_agent_response(raw_text)
+                        
+                        # Debugging: Print the exact JSON payload
+                        print("\n--- [DEBUG: ELASTICSEARCH JSON OUTPUT] ---")
+                        print(json.dumps(es_payload, indent=2))
+                        print("------------------------------------------\n")
+                        
+                        # Return list of sources for UI consistency
+                        return [hit["_source"] for hit in es_payload.get("hits", [])]
         return []
     except Exception as e:
-        st.error(f"Fetch error: {e}")
+        print(f"Fetch/Parse Error: {e}")
         return []
 
 
 # def parse_agent_response(text: str) -> list[dict]:
 #     """
-#     Parses the agent's ---BATCH_START--- / ---BATCH_END--- delimited output
-#     into a list of dicts with keys: batch_title, orders, items, prep_time.
+#     Parses ---BATCH_START--- / ---BATCH_END--- delimited agent output into dicts.
+    
+#     Expected format:
+#         ---BATCH_START---
+#         Group: [Name]
+#         Orders: [ID1, ID2]
+#         Seats: [A-1, A-2]
+#         Food: [Item1, Item2]
+#         Max_Wait: [Time]
+#         ---BATCH_END---
 #     """
 #     batches = []
 #     sections = text.split("---BATCH_START---")
@@ -516,10 +562,12 @@ def fetch_batches():
 #             continue
 
 #         content = section.split("---BATCH_END---")[0].strip()
+
 #         batch = {
 #             "batch_title": "Delivery Batch",
 #             "orders": "",
-#             "items": [],
+#             "items": [],       # Food items
+#             "order_ids": [],   # Order IDs
 #             "prep_time": "N/A",
 #             "seats": "N/A",
 #         }
@@ -531,72 +579,88 @@ def fetch_batches():
 #             if line.startswith("Group:"):
 #                 batch["batch_title"] = line.replace("Group:", "").strip()
 #             elif line.startswith("Orders:"):
-#                 raw_orders = line.replace("Orders:", "").strip()
-#                 batch["orders"] = raw_orders
-#                 # Use order IDs as the items list for display
-#                 batch["items"] = [o.strip() for o in raw_orders.split(",") if o.strip()]
-#             elif line.startswith("Max_Wait:"):
-#                 batch["prep_time"] = line.replace("Max_Wait:", "").strip()
+#                 raw = line.replace("Orders:", "").strip().strip("[]")
+#                 batch["orders"] = raw
+#                 batch["order_ids"] = [o.strip() for o in raw.split(",") if o.strip()]
 #             elif line.startswith("Seats:"):
-#                 batch["seats"] = line.replace("Seats:", "").strip()
+#                 batch["seats"] = line.replace("Seats:", "").strip().strip("[]")
+#             elif line.startswith("Food:"):
+#                 raw = line.replace("Food:", "").strip().strip("[]")
+#                 batch["items"] = [f.strip() for f in raw.split(",") if f.strip()]
+#             elif line.startswith("Max_Wait:"):
+#                 batch["prep_time"] = line.replace("Max_Wait:", "").strip().strip("[]")
 
 #         batches.append(batch)
 
 #     return batches
+from datetime import datetime
+import json
+import re
 
-def parse_agent_response(text: str) -> list[dict]:
+def parse_agent_response(agent_output: str, vendor_id: str = "V010") -> dict:
     """
-    Parses ---BATCH_START--- / ---BATCH_END--- delimited agent output into dicts.
+    Parses agent text into the Elasticsearch hit schema.
+    This version is designed to run locally in the Streamlit frontend.
+    """
+   
+    """
+    Parses agent-formatted text into an Elasticsearch 'hits' JSON array.
+    Handles fields with or without square brackets.
+    """
+    # Isolate individual batch blocks
+    batch_pattern = re.compile(r'---BATCH_START---\n(.*?)\n---BATCH_END---', re.DOTALL)
+    raw_batches = batch_pattern.findall(agent_output)
     
-    Expected format:
-        ---BATCH_START---
-        Group: [Name]
-        Orders: [ID1, ID2]
-        Seats: [A-1, A-2]
-        Food: [Item1, Item2]
-        Max_Wait: [Time]
-        ---BATCH_END---
-    """
-    batches = []
-    sections = text.split("---BATCH_START---")
-
-    for section in sections:
-        if "---BATCH_END---" not in section:
-            continue
-
-        content = section.split("---BATCH_END---")[0].strip()
-
-        batch = {
-            "batch_title": "Delivery Batch",
-            "orders": "",
-            "items": [],       # Food items
-            "order_ids": [],   # Order IDs
-            "prep_time": "N/A",
-            "seats": "N/A",
+    hits = []
+    
+    for i, batch_text in enumerate(raw_batches, start=1):
+        
+        # Helper: Extracts value and cleans up optional [] brackets
+        def get_field(field_name):
+            pattern = fr"{field_name}:\s*\[?(.*?)\]?$"
+            match = re.search(pattern, batch_text, re.MULTILINE)
+            return match.group(1).strip() if match else ""
+        
+        # 1. Extract and clean data
+        order_raw = get_field("Orders")
+        food_raw = get_field("Food")
+        route_steps = get_field("Route") 
+        max_wait_str = get_field("Max_Wait")
+        
+        # 2. Convert to lists/ints
+        order_ids = [o.strip() for o in order_raw.split(",")] if order_raw else []
+        items = [f.strip() for f in food_raw.split(",")] if food_raw else []
+        
+        eta_match = re.search(r'\d+', max_wait_str)
+        total_eta_min = int(eta_match.group()) // 60 if eta_match else 0
+        
+        # 3. Construct JSON
+        cluster_id = f"CLU-{str(i).zfill(3)}"
+        
+        hit_doc = {
+            "_index": "logistics-clusters",
+            "_id": cluster_id,
+            "_score": 1,
+            "_source": {
+                "cluster_id": cluster_id,
+                "order_ids": order_ids,
+                "items": items,
+                "vendor_id": vendor_id,
+                "route_steps": route_steps,
+                "total_eta_min": total_eta_min,
+                "status": "PENDING",
+                "created_at": datetime.utcnow().isoformat()
+            }
         }
-
-        for line in content.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith("Group:"):
-                batch["batch_title"] = line.replace("Group:", "").strip()
-            elif line.startswith("Orders:"):
-                raw = line.replace("Orders:", "").strip().strip("[]")
-                batch["orders"] = raw
-                batch["order_ids"] = [o.strip() for o in raw.split(",") if o.strip()]
-            elif line.startswith("Seats:"):
-                batch["seats"] = line.replace("Seats:", "").strip().strip("[]")
-            elif line.startswith("Food:"):
-                raw = line.replace("Food:", "").strip().strip("[]")
-                batch["items"] = [f.strip() for f in raw.split(",") if f.strip()]
-            elif line.startswith("Max_Wait:"):
-                batch["prep_time"] = line.replace("Max_Wait:", "").strip().strip("[]")
-
-        batches.append(batch)
-
-    return batches
-
+        hits.append(hit_doc)
+        
+    return {"hits": hits}
+    
+    # Debugging: Print to Streamlit server console
+    print("\n--- [FRONTEND DEBUG: PARSED ES JSON] ---")
+    print(json.dumps(es_payload, indent=2))
+    
+    return es_payload
 # --- UI SETUP ---
 st.set_page_config(page_title="BiteRush Logistics OS", layout="wide", page_icon="🏟️")
 st.markdown("""
@@ -642,9 +706,9 @@ if menu_selection == "Dashboard":
 
     # Trigger agent only once per session (or after manual sync)
     if not st.session_state.agent_run_complete:
-        with st.spinner("Optimizing routes..."):
+        with st.spinner("Syncing and parsing..."):
             if trigger_batching_agent():
-                st.session_state.batches = fetch_batches()
+                st.session_state.batches = fetch_batches() # This now handles everything!
                 st.session_state.agent_run_complete = True
                 st.rerun()
             else:
@@ -666,24 +730,7 @@ if menu_selection == "Dashboard":
         for i, data in enumerate(list(st.session_state.batches)):
             with cols[i % 3]:
                 # ✅ FIX: unsafe_allow_html (not unsafe_html)
-                st.markdown(f"""
-                    <div class="logistics-card">
-                        <div class="card-title">📦 {data.get('batch_title', 'Batch')}</div>
-                        <div style="color:#ef4444;font-weight:700;margin-top:8px;">
-                            ⏱️ Max Wait: {data.get('prep_time', 'N/A')}
-                        </div>
-                        <div style="font-size:0.9rem;margin-top:5px;">
-                            💺 Seats: {data.get('seats', 'N/A')}
-                        </div>
-                        <hr style="margin:10px 0;">
-                        <div style="font-size:0.85rem;">
-                            <strong>🍔 Food:</strong> {", ".join(data.get('items', []))}
-                        </div>
-                        <div style="font-size:0.85rem;margin-top:5px;">
-                            <strong>📋 Orders:</strong> {", ".join(data.get('order_ids', []))}
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
+                
 
                 if st.button("✅ Mark Completed", key=f"btn_{i}"):
                     st.session_state.batches.pop(i)
