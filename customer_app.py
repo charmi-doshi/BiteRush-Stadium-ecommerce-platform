@@ -45,13 +45,13 @@ VENDOR_ID = "V010"
 ES_INDEX  = "incoming-orders"
 
 MENU_ITEMS = [
-    {"id": "vadapav", "name": "Vada pav",      "icon": "🥙", "price": 40,  "tag": "veg", "food_type": "fresh_cooked", "prep_time_sec": 90},
+    {"id": "vadapav", "name": "Vada pav",      "icon": "🥙", "price": 20,  "tag": "veg", "food_type": "fresh_cooked", "prep_time_sec": 90},
     {"id": "samosa",  "name": "Indian samosa", "icon": "🥟", "price": 35,  "tag": "veg", "food_type": "fresh_cooked", "prep_time_sec": 75},
-    {"id": "fries",   "name": "French fries",  "icon": "🍟", "price": 60,  "tag": "veg", "food_type": "fresh_cooked", "prep_time_sec": 60},
-    {"id": "hotdog",  "name": "Hot dog",        "icon": "🌭", "price": 80,  "tag": "",    "food_type": "fresh_cooked", "prep_time_sec": 70},
-    {"id": "tacos",   "name": "Tacos",          "icon": "🌮", "price": 90,  "tag": "",    "food_type": "fresh_cooked", "prep_time_sec": 80},
-    {"id": "coke",    "name": "Coke",           "icon": "🥤", "price": 50,  "tag": "",    "food_type": "packaged",     "prep_time_sec": 0},
-    {"id": "beer",    "name": "Beer",           "icon": "🍺", "price": 120, "tag": "alc", "food_type": "packaged",     "prep_time_sec": 0},
+    {"id": "fries",   "name": "French fries",  "icon": "🍟", "price": 5,  "tag": "veg", "food_type": "fresh_cooked", "prep_time_sec": 60},
+    {"id": "hotdog",  "name": "Hot dog",        "icon": "🌭", "price": 7,  "tag": "",    "food_type": "fresh_cooked", "prep_time_sec": 70},
+    {"id": "tacos",   "name": "Tacos",          "icon": "🌮", "price": 4,  "tag": "",    "food_type": "fresh_cooked", "prep_time_sec": 80},
+    {"id": "coke",    "name": "Coke",           "icon": "🥤", "price": 3,  "tag": "",    "food_type": "packaged",     "prep_time_sec": 0},
+    {"id": "beer",    "name": "Beer",           "icon": "🍺", "price": 10, "tag": "alc", "food_type": "packaged",     "prep_time_sec": 0},
 ]
 MENU_BY_ID = {m["id"]: m for m in MENU_ITEMS}
 FLOORS = ["Ground floor", "First floor"]
@@ -179,7 +179,7 @@ for item in MENU_ITEMS:
             <span style="font-size:1.5rem; line-height:1;">{item['icon']}</span>
             <div>
               <span class="menu-name">{item['name']}</span>{tag_html}
-              <div class="menu-price">Rs. {item['price']}</div>
+              <div class="menu-price">$ {item['price']}</div>
             </div>
           </div>
         </div>
@@ -215,13 +215,13 @@ if st.session_state.cart:
         m   = MENU_BY_ID[iid]
         sub = m["price"] * qty
         total += sub
-        rows_html += f'<div class="s-row"><span>{m["name"]} x{qty}</span><span>Rs. {sub}</span></div>'
+        rows_html += f'<div class="s-row"><span>{m["name"]} x{qty}</span><span>$. {sub}</span></div>'
 
     seat_str = f"{floor} / Row {row} / Seat {seat}" if (floor and row and seat) else "—"
     st.markdown(f"""
     <div class="summary-box">
       {rows_html}
-      <div class="s-total"><span>Total</span><span>Rs. {total}</span></div>
+      <div class="s-total"><span>Total</span><span>$. {total}</span></div>
       <div class="s-seat">Delivering to: <strong>{seat_str}</strong></div>
     </div>
     """, unsafe_allow_html=True)

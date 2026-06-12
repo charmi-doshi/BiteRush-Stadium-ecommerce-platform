@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ADK_BASE_URL = os.getenv("ADK_BASE_URL", "http://localhost:8000")
+ADK_BASE_URL = os.getenv("ADK_BASE_URL")
 APP_NAME     = "stadium_operations_agent"
 USER_ID      = "hackathon_judge"
 SESSION_ID   = "biterush_stadium_session"
