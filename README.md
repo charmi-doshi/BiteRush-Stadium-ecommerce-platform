@@ -122,12 +122,11 @@ streamlit run app.py                  # vendor dashboard
 
 ## CopyRight
 
-# app.py
-"""
 Copyright (c) 2026 [Charmi Doshi]
+
 All Rights Reserved. This code is shared publicly for portfolio and hackathon 
 purposes only. Unauthorized copying or reuse is prohibited.
-"""
+
 
 ## License
 
